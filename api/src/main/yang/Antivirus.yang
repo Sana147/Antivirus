@@ -1,0 +1,92 @@
+module Antivirus {
+    yang-version 1;
+    namespace "urn:opendaylight:params:xml:ns:yang:Antivirus";
+    prefix "Antivirus";
+
+    revision "2015-01-05" {
+        description "Initial revision of Antivirus model";
+    }
+        
+    grouping ConfigurationRules {
+		leaf App-ID {
+			type string;
+			config true;
+			mandatory true;
+			description "The identifier for an Applicaton (typically is a number between 1 - 400).";
+		}
+		leaf Password {
+			type string;
+			description "The password for identifiying an application.";
+		}
+		leaf Operation {
+			type uint8;
+			config true;
+			mandatory false;
+			description "Specifies whether to add, delete or modify a configuration rule.";
+		}
+		leaf Rule-ID {
+			type string;
+			config true;
+			mandatory false;
+			description "The identifier of a rule, having format {App-ID,Rule Number}.";
+		}
+		leaf SourceIP {
+			type string;
+			config true;
+			mandatory false;
+			description "The IP address of the source.";
+		}
+		leaf DestinationIP {
+			type string;
+			config true;
+			mandatory false;
+			description "The IP address of the destination.";
+		}
+		leaf SourcePort {
+			type string;
+			config true;
+			mandatory false;
+			description "The port number of source.";
+		}
+		leaf DestinationPort {
+			type string;
+			config true;
+			mandatory false;
+			description "The port number of destination.";
+		}
+		leaf Priority {
+			type uint16;
+			config true;
+			mandatory false;
+			description "Priority of a rule.";
+		}
+		leaf Action {
+			type string;
+			config true;
+			mandatory false;
+			description "The action pertaining to a rule (can be ALLOW or DENY).";
+		}
+    }
+    
+    container ConfigurationRules-registry {
+    	list ConfigurationRules-registry-entry {
+    		key "Rule-ID";
+    		uses ConfigurationRules;
+    	}
+    }
+    
+    rpc Application-hello {
+    	input {
+    		uses ConfigurationRules;
+    	}
+    	output {
+    		leaf greeting {
+    			type string;
+    		}
+    		leaf counter {
+    			type string;
+    		}
+    	}
+    }
+    
+}
