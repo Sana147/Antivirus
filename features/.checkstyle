@@ -35,7 +35,6 @@
     <file-match-pattern match-pattern="^src/test/java.*.*protobuff/messages/.*" include-pattern="false"/>
     <file-match-pattern match-pattern="^src/test/java.*.*thrift/gen/.*\.java" include-pattern="false"/>
     <file-match-pattern match-pattern="^src/main/resources.*\.properties" include-pattern="true"/>
-    <file-match-pattern match-pattern="^target-ide/generated-resources/script.*\.properties" include-pattern="true"/>
     <file-match-pattern match-pattern="^src/test/resources.*\.properties" include-pattern="true"/>
   </fileset>
 </fileset-config>

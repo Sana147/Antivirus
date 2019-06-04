@@ -39,8 +39,8 @@ import com.google.common.util.concurrent.Futures;
 public class AntivirusImpl implements AntivirusService {
 	
 	//TODO -- Handle exceptions everywhere in the code; special characters are problematic. (Fixed)
-	//TODO -- Handle Rule Duplication. 
-	//TODO -- Handle Rule Conflict. 
+	//TODO -- Handle Rule Duplication for all three modes. 
+	//TODO -- Handle Rule Conflict for all three modes. 
 	
 	private static final Logger LOG = LoggerFactory.getLogger(AntivirusImpl.class);
 	private DataBroker db;
@@ -114,7 +114,6 @@ public class AntivirusImpl implements AntivirusService {
 		ActionInventory = initialize_String_Array (ActionInventory);
 		
 		Password_Dictionary = initialize_Password_Dictionary ();
-		
 		Threshold_Inventory = Set_Threshold_Inventory(1);
 	}	
 
@@ -345,7 +344,7 @@ public class AntivirusImpl implements AntivirusService {
 
 		return correct_format;
 	}
-	
+		
 	public boolean check_format_ports (String port) {
 		
 		boolean correct_format = false;
@@ -466,7 +465,28 @@ public class AntivirusImpl implements AntivirusService {
 		return PasswordCorrect;
 	}
 	
-	public boolean StoreRules (ApplicationHelloInput input) {
+	public int FindHighPriorityApp (int AppID1, int AppID2) {
+		
+		if (App_Precedence[AppID1] == App_Precedence[AppID2]) {
+			if (AppID1 > AppID2) {
+				return AppID1; 				
+			}
+			else {
+				return AppID2;
+			}
+		}
+		else if (App_Precedence[AppID1] < App_Precedence[AppID2]) {
+			return AppID2;
+		}
+		else if (App_Precedence[AppID1] > App_Precedence[AppID2]){
+			return AppID1;
+		}
+		else {
+			return -1;
+		}
+	}
+
+	public String[] StoreRules (ApplicationHelloInput input) {
 		String RuleID = input.getRuleID();
 		String SourceIP = input.getSourceIP();
 		String DestinationIP = input.getDestinationIP();
@@ -475,6 +495,8 @@ public class AntivirusImpl implements AntivirusService {
 		int Priority = input.getPriority();
 		String Action = input.getAction();
 		boolean duplicate_rule = false;
+		String [] duplicate_rule_parameters = {"false","-2"};
+		
 		
 		if (Universal_Counter == 0) {
 			RuleIDInventory [Universal_Counter] = RuleID;
@@ -497,9 +519,10 @@ public class AntivirusImpl implements AntivirusService {
 			Universal_Counter = Universal_Counter + 1;			
 		}
 		else {
-			duplicate_rule = checkDuplicateRules (input);
+			duplicate_rule_parameters = checkDuplicateRules (input);
 			
-			if (duplicate_rule) {
+			if (duplicate_rule_parameters[0].equals("true")) {
+				LOG.info("Rule Found " + duplicate_rule_parameters[0]);
 				// do not store
 			}
 			else {
@@ -513,10 +536,12 @@ public class AntivirusImpl implements AntivirusService {
 				Universal_Counter = Universal_Counter + 1;							
 			}
 		}
-		return duplicate_rule;
+		return duplicate_rule_parameters;
 	}
 	
-	public boolean checkDuplicateRules (ApplicationHelloInput input) {
+	public String[] checkDuplicateRules (ApplicationHelloInput input) {
+		int current_AppID = Integer.parseInt(input.getAppID());
+		String current_RuleID = input.getRuleID();
 		String SourceIP = input.getSourceIP();
 		String DestinationIP = input.getDestinationIP();
 		String SourcePort = input.getSourcePort();
@@ -524,11 +549,17 @@ public class AntivirusImpl implements AntivirusService {
 		int Priority = input.getPriority();
 		String Action = input.getAction();
 		
+		int HighPriorityApp = -2;
 		int match_fields = 0;
 		boolean duplicate_rule = false;
-		String RuleID;
+		String RuleID = null;
+		String str;
+		int AppID_part = -2;
+	    StringBuilder sb = new StringBuilder();
+		String [] duplicate_rule_parameters = new String [2];
+	    int i = 0;
 		
-		for (int i = 0; i <= Universal_Counter; i++) {
+		for (i = 0; i <= Universal_Counter; i++) {
 			
 			match_fields = 0;
 			
@@ -566,23 +597,60 @@ public class AntivirusImpl implements AntivirusService {
 			
 			else if ( (Action.equals("DENY")) || (Action.equals("deny")) || (Action.equals("Deny")) ) {
 				if ( (ActionInventory[i].equals("Deny")) || (ActionInventory[i].equals("DENY")) || (ActionInventory[i].equals("deny"))) {
-					match_fields = match_fields + 1;
+			 		match_fields = match_fields + 1;
 				}
 				else {
 					//do nothing
 				}
 			}
-			
+						
 			if (match_fields == 6) {
 				duplicate_rule = true;
-				RuleID = RuleIDInventory[i]; //Rule ID has format App
-				break;
+				RuleID = RuleIDInventory[i]; //Rule ID has format AppID:Rule Number
+				
+				for (int j = 0; j < RuleID.length(); j++) {
+					if (RuleID.charAt(j) == ':')
+					{
+		                str = sb.toString();
+		                AppID_part = Integer.parseInt(str);
+						break;
+					}
+					else {
+				            sb.append(RuleID.charAt(j));
+				        }			
+				}
+
+				HighPriorityApp = FindHighPriorityApp (current_AppID, AppID_part);
+
+				if (HighPriorityApp == AppID_part) 
+				{
+					// do nothing
+				}
+				else // delete the old rule and store it again with the current AppID. 
+				{
+//					ModifyRuleRegistry (i,current_RuleID);
+				}	
+				
+                break;
 			}
 			else {
 				duplicate_rule = false;
 			}
 		}
-		return duplicate_rule;		
+		
+		duplicate_rule_parameters [0] = Boolean.toString(duplicate_rule);
+		duplicate_rule_parameters [1] = String.valueOf(HighPriorityApp);					
+		
+		return duplicate_rule_parameters;		
+	}
+
+	public void ModifyRuleRegistry (int i, String RuleID) {
+		ReadWriteTransaction transaction = db.newReadWriteTransaction();
+	    InstanceIdentifier<ConfigurationRulesRegistryEntry> iid = toInstanceIdentifier(RuleID);
+		        
+        transaction.delete(LogicalDatastoreType.CONFIGURATION, iid);	
+				CheckedFuture<Void, org.opendaylight.controller.md.sal.common.api.data.TransactionCommitFailedException> future = transaction.submit();
+				Futures.addCallback(future, new LoggingFuturesCallBack<Void>("Failed to delete a rule", LOG));
 	}
 	
 	public String Decision_Engine (ApplicationHelloInput input) {
@@ -591,6 +659,7 @@ public class AntivirusImpl implements AntivirusService {
 		int operation = input.getOperation();  // The operation to be performed.
 		
 		boolean duplicate_rule = false;
+		String [] duplicate_rule_parameters;
 		String Greeting_Message = null;
 				
 		if (operation == 0) 
@@ -603,10 +672,10 @@ public class AntivirusImpl implements AntivirusService {
 			}
 			else 
 			{
-				duplicate_rule = StoreRules (input);
+				duplicate_rule_parameters = StoreRules (input);
 				
-				if (duplicate_rule == true) {
-					Greeting_Message = "The rule already exists.";
+				if (duplicate_rule_parameters[0].equals("true")) {
+					Greeting_Message = "The rule exists for App ID: " + duplicate_rule_parameters[1];
 				}
 				
 				else {
@@ -645,16 +714,16 @@ public class AntivirusImpl implements AntivirusService {
         CheckedFuture<Void, TransactionCommitFailedException> future = transaction.submit();
         Futures.addCallback(future, new LoggingFuturesCallBack<>("Failed to create rule registry", LOG));
     }
+		
+	private InstanceIdentifier<ConfigurationRulesRegistryEntry> toInstanceIdentifier(String RuleID) {
+	        InstanceIdentifier<ConfigurationRulesRegistryEntry> iid = InstanceIdentifier.create(ConfigurationRulesRegistry.class)
+	            .child(ConfigurationRulesRegistryEntry.class, new ConfigurationRulesRegistryEntryKey(RuleID));
+	        return iid;
+	    }
 	
-    private InstanceIdentifier<ConfigurationRulesRegistryEntry> toInstanceIdentifier(ApplicationHelloInput input) {
-        InstanceIdentifier<ConfigurationRulesRegistryEntry> iid = InstanceIdentifier.create(ConfigurationRulesRegistry.class)
-            .child(ConfigurationRulesRegistryEntry.class, new ConfigurationRulesRegistryEntryKey(input.getRuleID()));
-        return iid;
-    }
-    
 	private void writeToRuleRegistry(ApplicationHelloInput input_rule) {
 	    WriteTransaction transaction = db.newWriteOnlyTransaction();
-	    InstanceIdentifier<ConfigurationRulesRegistryEntry> iid = toInstanceIdentifier(input_rule);
+	    InstanceIdentifier<ConfigurationRulesRegistryEntry> iid = toInstanceIdentifier(input_rule.getRuleID());
 	    ConfigurationRulesRegistryEntry ruleregistry = new ConfigurationRulesRegistryEntryBuilder()
 	    		.setAppID(input_rule.getAppID())
 	    		.setOperation(input_rule.getOperation())
@@ -673,7 +742,7 @@ public class AntivirusImpl implements AntivirusService {
 
 	public void deletefromRuleRegistry (ApplicationHelloInput input_rule) {
 		ReadWriteTransaction transaction = db.newReadWriteTransaction();
-		InstanceIdentifier<ConfigurationRulesRegistryEntry> iid = toInstanceIdentifier(input_rule);
+		InstanceIdentifier<ConfigurationRulesRegistryEntry> iid = toInstanceIdentifier(input_rule.getRuleID());
 		transaction.delete(LogicalDatastoreType.CONFIGURATION, iid);	
 		CheckedFuture<Void, org.opendaylight.controller.md.sal.common.api.data.TransactionCommitFailedException> future = transaction.submit();
 		Futures.addCallback(future, new LoggingFuturesCallBack<Void>("Failed to delete a rule", LOG));
@@ -682,7 +751,7 @@ public class AntivirusImpl implements AntivirusService {
 	private String readFromruleRegistry (ApplicationHelloInput input) {
 	    String result = null;
 	    ReadOnlyTransaction transaction = db.newReadOnlyTransaction();
-	    InstanceIdentifier<ConfigurationRulesRegistryEntry> iid = toInstanceIdentifier(input);
+	    InstanceIdentifier<ConfigurationRulesRegistryEntry> iid = toInstanceIdentifier(input.getRuleID());
 	    CheckedFuture<Optional<ConfigurationRulesRegistryEntry>, ReadFailedException> future =
 	            transaction.read(LogicalDatastoreType.CONFIGURATION, iid);
 	    Optional<ConfigurationRulesRegistryEntry> optional = Optional.absent();
