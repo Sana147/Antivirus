@@ -39,8 +39,8 @@ import com.google.common.util.concurrent.Futures;
 public class AntivirusImpl implements AntivirusService {
 	
 	//TODO -- Handle exceptions everywhere in the code; special characters are problematic. (Fixed)
-	//TODO -- Handle Rule Duplication for all three modes. 
-	//TODO -- Handle Rule Conflict for all three modes. 
+	//TODO -- Handle Rule Duplication for all three modes. (Handled for Fair Resource Allocation and Role based Resource Allocation). 
+	//TODO -- Handle Rule Conflict for all three modes. (Handled for Fair Resource Allocation and Role based Resource Allocation).
 	
 	private static final Logger LOG = LoggerFactory.getLogger(AntivirusImpl.class);
 	private DataBroker db;
@@ -489,6 +489,7 @@ public class AntivirusImpl implements AntivirusService {
 		
 		if (check_format)
 		{
+			LOG.info("Breakpoint: Going into Decision Engine");
 			Greeting_Message = Decision_Engine (input);
 			LOG.info("Format is correct.");
 		}
@@ -590,49 +591,88 @@ public class AntivirusImpl implements AntivirusService {
 	          return NewArray; 
 	      }		
 	}
+	
+	public int FindAppIDFromRuleID (String RuleID) {
+		int AppID_part = -2;
+		String str;
+	    StringBuilder sb = new StringBuilder();
+		
+		for (int j = 0; j < RuleID.length(); j++) {
+			if (RuleID.charAt(j) == ':')
+			{
+                str = sb.toString();
+                AppID_part = Integer.parseInt(str);
+				break;
+			}
+			else {
+		            sb.append(RuleID.charAt(j));
+		        }			
+			}
+		return AppID_part;
+	}
 
-	public String Decision_Engine (ApplicationHelloInput input) {
-		String RuleID = input.getRuleID();
-		String SourceIP = input.getSourceIP();
-		String DestinationIP = input.getDestinationIP();
-		String SourcePort = input.getSourcePort();
-		String DestinationPort = input.getDestinationPort();
-		int Priority = input.getPriority();
-		String Action = input.getAction();
+	public String UpdateRuleCatalog (ApplicationHelloInput input) {
+
 		String Greeting_Message = null;
-		String [] duplicate_rule_parameters = {"false","-2"};
+		
+		RuleIDInventory [Universal_Counter] = input.getRuleID();
+		SourceIPInventory [Universal_Counter] = input.getSourceIP();
+		DestinationIPInventory [Universal_Counter] = input.getDestinationIP();
+		PriorityInventory[Universal_Counter] = input.getPriority();
+		ActionInventory[Universal_Counter] = input.getAction();
+		
+		if ( (input.getSourcePort().equals("ANY")) || (input.getSourcePort().equals("NONE")) || (input.getSourcePort().equals("any")) || (input.getSourcePort().equals("none"))
+			 || (input.getSourcePort().equals("Any")) || (input.getSourcePort().equals("None")))
+		{
+			SourcePortInventory [Universal_Counter] = "0";
+			DestinationPortInventory [Universal_Counter] = "0";
+		}
+		else {
+			SourcePortInventory [Universal_Counter] = input.getSourcePort();				
+			DestinationPortInventory [Universal_Counter] = input.getDestinationPort();
+		}
+		
+		writeToRuleRegistry(input);
+		App_Inventory[Integer.parseInt(input.getAppID())] = App_Inventory[Integer.parseInt(input.getAppID())] + 1;
+		Greeting_Message = "Rule ID: " + input.getRuleID() + " for App ID: " +input.getAppID() + " stored.";										
+
+		Universal_Counter = Universal_Counter + 1;							
+		return Greeting_Message;		
+	}
+	
+	public String DeleteFromRuleCatalog (String RuleID, String AppID, int indexToBeDeleted) {
+		String Greeting_Message = null;
+		LOG.info("Breakpoint2: The RuleID is: " + RuleID);
+		deletefromRuleRegistry (RuleID);
+		App_Inventory[Integer.parseInt(AppID)] = App_Inventory[Integer.parseInt(AppID)] - 1;
+		LOG.info("Breakpoint: In DeleteFromRuleCatalog.");
+		
+		Greeting_Message = "Rule ID: " + RuleID + "for App ID: " + AppID + " deleted.";
+		RuleIDInventory = DeleteEntryFromStringArray (indexToBeDeleted, RuleIDInventory);
+		SourceIPInventory = DeleteEntryFromStringArray (indexToBeDeleted, SourceIPInventory);
+		DestinationIPInventory = DeleteEntryFromStringArray (indexToBeDeleted, DestinationIPInventory);
+		SourcePortInventory = DeleteEntryFromStringArray (indexToBeDeleted, SourcePortInventory);
+		DestinationPortInventory = DeleteEntryFromStringArray (indexToBeDeleted, DestinationPortInventory);
+		PriorityInventory = DeleteEntryFromIntegerArray (indexToBeDeleted, PriorityInventory);
+		ActionInventory = DeleteEntryFromStringArray (indexToBeDeleted, ActionInventory);
+
+		Universal_Counter = Universal_Counter - 1;
+		return Greeting_Message;		
+	}
+	
+	public String Decision_Engine (ApplicationHelloInput input) {
+		String Greeting_Message = null;
+		String [] parameters = {"false","-2","false","-2"};
 		int Operation = input.getOperation();
 		
 		String Existing_RuleID = null;
-		String str;
-	    StringBuilder sb = new StringBuilder();
 		int AppID_part = -2;
 	    int High_Priority_App;
 		
 		if (Universal_Counter == 0) {
 			if (Operation == 0) {
-				RuleIDInventory [Universal_Counter] = RuleID;
-				SourceIPInventory [Universal_Counter] = SourceIP;
-				DestinationIPInventory [Universal_Counter] = DestinationIP;
-				PriorityInventory[Universal_Counter] = Priority;
-				ActionInventory[Universal_Counter] = Action;
-				
-				if ( (SourcePort.equals("ANY")) || (SourcePort.equals("NONE")) || (SourcePort.equals("any")) || (SourcePort.equals("none"))
-					 || (SourcePort.equals("Any")) || (SourcePort.equals("None")))
-				{
-					SourcePortInventory [Universal_Counter] = "0";
-					DestinationPortInventory [Universal_Counter] = "0";
-				}
-				else {
-					SourcePortInventory [Universal_Counter] = SourcePort;				
-					DestinationPortInventory [Universal_Counter] = DestinationPort;
-				}
-				
-				writeToRuleRegistry(input);
-				App_Inventory[Integer.parseInt(input.getAppID())] = App_Inventory[Integer.parseInt(input.getAppID())] + 1;
-				Greeting_Message = "Rule ID: " + input.getRuleID() + " for App ID: " +input.getAppID() + " stored.";										
-
-				Universal_Counter = Universal_Counter + 1;							
+				LOG.info("Breakpoint: In Decision Engine.");
+				Greeting_Message = UpdateRuleCatalog (input);
 			}
 			else if (Operation == 1) {
     			Greeting_Message = "Rule ID: " + input.getRuleID() + " for App ID: " +input.getAppID() + " does not exist.";									
@@ -642,60 +682,35 @@ public class AntivirusImpl implements AntivirusService {
 			}
 		}
 		else {
-			duplicate_rule_parameters = FindMatchingRule (input);
+			parameters = FindDuplicateConflictingRule (input);
 			
-			if (duplicate_rule_parameters[0].equals("true")) {
+			if (parameters[0].equals("true")) { // Duplicate Rule Found
 				// check if the operation was to add a rule or delete a rule.
 				if (Operation == 0) {
 					// do not store.
-					Existing_RuleID = RuleIDInventory[Integer.parseInt(duplicate_rule_parameters[1])]; //Rule ID has format AppID:Rule Number
-					
-					for (int j = 0; j < Existing_RuleID.length(); j++) {
-						if (Existing_RuleID.charAt(j) == ':')
-						{
-			                str = sb.toString();
-			                AppID_part = Integer.parseInt(str);
-							break;
-						}
-						else {
-					            sb.append(Existing_RuleID.charAt(j));
-					        }			
-						}
-					
+					Existing_RuleID = RuleIDInventory[Integer.parseInt(parameters[1])]; //Rule ID has format AppID:Rule Number
+					AppID_part = FindAppIDFromRuleID (Existing_RuleID);
 					High_Priority_App = FindHighPriorityApp (Integer.parseInt(input.getAppID()), AppID_part);
 					if (High_Priority_App == AppID_part) {
 						Greeting_Message = "The rule already exists with App ID: " + AppID_part;						
 						// do nothing
 					}
 					else if (High_Priority_App == Integer.parseInt(input.getAppID())) {
-						deletefromRuleRegistry (RuleIDInventory[Integer.parseInt(duplicate_rule_parameters[1])]);
+						deletefromRuleRegistry (RuleIDInventory[Integer.parseInt(parameters[1])]);
 		    			App_Inventory[AppID_part] = App_Inventory[AppID_part] - 1;						
 		    			
 						writeToRuleRegistry(input);
 		    			App_Inventory[Integer.parseInt(input.getAppID())] = App_Inventory[Integer.parseInt(input.getAppID())] + 1;
 
-						RuleIDInventory[Integer.parseInt(duplicate_rule_parameters[1])]= input.getRuleID(); //overwrite existing RuleID
+						RuleIDInventory[Integer.parseInt(parameters[1])]= input.getRuleID(); //overwrite existing RuleID
 						Greeting_Message = "Duplicate Rule Found. Replaced with High Priority App having AppID : " + input.getAppID();						
 					}
-						
 				}
 				else if (Operation == 1) {
 				// delete the rule
-					if (input.getRuleID().equals(RuleIDInventory[Integer.parseInt(duplicate_rule_parameters[1])]))
+					if (input.getRuleID().equals(RuleIDInventory[Integer.parseInt(parameters[1])]))
 					{
-						deletefromRuleRegistry (input.getRuleID());
-		    			App_Inventory[Integer.parseInt(input.getAppID())] = App_Inventory[Integer.parseInt(input.getAppID())] - 1;
-		    			
-		    			Greeting_Message = "Rule ID: " + input.getRuleID() + "for App ID: " +input.getAppID() + " deleted.";
-						RuleIDInventory = DeleteEntryFromStringArray (Integer.parseInt(duplicate_rule_parameters[1]), RuleIDInventory);
-		    			SourceIPInventory = DeleteEntryFromStringArray (Integer.parseInt(duplicate_rule_parameters[1]), SourceIPInventory);
-						DestinationIPInventory = DeleteEntryFromStringArray (Integer.parseInt(duplicate_rule_parameters[1]), DestinationIPInventory);
-						SourcePortInventory = DeleteEntryFromStringArray (Integer.parseInt(duplicate_rule_parameters[1]), SourcePortInventory);
-						DestinationPortInventory = DeleteEntryFromStringArray (Integer.parseInt(duplicate_rule_parameters[1]), DestinationPortInventory);
-						PriorityInventory = DeleteEntryFromIntegerArray (Integer.parseInt(duplicate_rule_parameters[1]), PriorityInventory);
-						ActionInventory = DeleteEntryFromStringArray (Integer.parseInt(duplicate_rule_parameters[1]), ActionInventory);
-
-						Universal_Counter = Universal_Counter - 1;
+						Greeting_Message = DeleteFromRuleCatalog (input.getRuleID(), input.getAppID(), Integer.parseInt(parameters[1]));
 		    		}
 		    		else
 		    		{
@@ -703,20 +718,44 @@ public class AntivirusImpl implements AntivirusService {
 		    		}
 				}
 			}
+			else if (parameters[2].equals("true")) { //Conflicting Rule Found
+				if (Operation == 0) {
+					// do not store.
+					Existing_RuleID = RuleIDInventory[Integer.parseInt(parameters[3])]; //Rule ID has format AppID:Rule Number
+					AppID_part = FindAppIDFromRuleID (Existing_RuleID);
+					High_Priority_App = FindHighPriorityApp (Integer.parseInt(input.getAppID()), AppID_part);
+					if (High_Priority_App == AppID_part) {
+						Greeting_Message = "Conflict resolved. Keeping Rule with App ID: " + AppID_part;						
+						// do nothing
+					}
+					else if (High_Priority_App == Integer.parseInt(input.getAppID())) {
+						deletefromRuleRegistry (RuleIDInventory[Integer.parseInt(parameters[3])]);
+		    			App_Inventory[AppID_part] = App_Inventory[AppID_part] - 1;						
+		    			
+						writeToRuleRegistry(input);
+		    			App_Inventory[Integer.parseInt(input.getAppID())] = App_Inventory[Integer.parseInt(input.getAppID())] + 1;
+
+						RuleIDInventory[Integer.parseInt(parameters[3])] = input.getRuleID(); //overwrite existing RuleID
+						ActionInventory[Integer.parseInt(parameters[3])] = input.getAction();
+						Greeting_Message = "Rule conflict Found. Replaced with High Priority App having AppID : " + input.getAppID();						
+					}
+				}
+				else if (Operation == 1) {
+				// delete the rule
+					if (input.getRuleID().equals(RuleIDInventory[Integer.parseInt(parameters[3])]) && 
+							(input.getAction().equals(ActionInventory[Integer.parseInt(parameters[3])])))
+					{
+						Greeting_Message = DeleteFromRuleCatalog (input.getRuleID(), input.getAppID(), Integer.parseInt(parameters[3]));
+		    		}
+		    		else
+		    		{
+		    			Greeting_Message = "Rule ID: " + input.getRuleID() + " for App ID: " +input.getAppID() + " does not exist.";
+		    		}
+				}				
+			}
 			else {
 				if (Operation == 0) {
-					RuleIDInventory [Universal_Counter] = RuleID;
-					SourceIPInventory [Universal_Counter] = SourceIP;
-					DestinationIPInventory [Universal_Counter] = DestinationIP;
-					SourcePortInventory [Universal_Counter] = SourcePort;
-					DestinationPortInventory [Universal_Counter] = DestinationPort;
-					PriorityInventory[Universal_Counter] = Priority;
-					ActionInventory[Universal_Counter] = Action;
-					writeToRuleRegistry(input);
-					App_Inventory[Integer.parseInt(input.getAppID())] = App_Inventory[Integer.parseInt(input.getAppID())] + 1;
-					Greeting_Message = "Rule ID: " + input.getRuleID() + " for App ID: " +input.getAppID() + " stored.";										
-
-					Universal_Counter = Universal_Counter + 1;												
+					Greeting_Message = UpdateRuleCatalog (input);
 				}
 				else if (Operation == 1) {
 	    			Greeting_Message = "Rule ID: " + input.getRuleID() + " for App ID: " +input.getAppID() + " does not exist.";					
@@ -729,7 +768,7 @@ public class AntivirusImpl implements AntivirusService {
 		return Greeting_Message;
 	}
 		
-	public String[] FindMatchingRule (ApplicationHelloInput input) {
+	public String[] FindDuplicateConflictingRule (ApplicationHelloInput input) {
 		String SourceIP = input.getSourceIP();
 		String DestinationIP = input.getDestinationIP();
 		String SourcePort = input.getSourcePort();
@@ -737,42 +776,57 @@ public class AntivirusImpl implements AntivirusService {
 		int Priority = input.getPriority();
 		String Action = input.getAction();
 		
-		int match_fields = 0;
-		int matched_index = -2;
+		int duplicate_index = -2;
+		int conflicting_index = -2;
 		boolean duplicate_rule = false;
-		String [] duplicate_rule_parameters = new String [2];
+		boolean conflicting_rule = false;
+		String [] parameters = new String [4];
 	    int i = 0;
-		
+		int srcIP_match;
+		int dstIP_match;
+		int srcPort_match;
+		int dstPort_match;
+		int priority_match;
+		int Action_match;
+		int duplicate_rule_found;
+		int conflicting_rule_found;
+	    		
 		for (i = 0; i <= Universal_Counter; i++) {
-			
-			match_fields = 0;
+			srcIP_match = 0;
+			dstIP_match = 0;
+			srcPort_match = 0;
+			dstPort_match = 0;
+			priority_match = 0;
+			Action_match = 0;
+			duplicate_rule_found = 0;
+			conflicting_rule_found = 0;
 			
 			if (SourceIPInventory[i].equals(SourceIP)) {
-				match_fields = match_fields + 1;
+				srcIP_match = srcIP_match + 1;
 			}
 			
 			if (DestinationIPInventory[i].equals(DestinationIP)) {
-				match_fields = match_fields + 1;
+				dstIP_match = dstIP_match + 1;
 			}
 			
 			if ( (SourcePortInventory[i].equals(SourcePort) || (SourcePort.equals("0"))))
 			{
-				match_fields = match_fields + 1;
+				srcPort_match = srcPort_match + 1;
 			}
 			
 			if ( (DestinationPortInventory[i].equals(DestinationPort)) || (DestinationPort.equals("0")) )
 			{
-				match_fields = match_fields + 1;
+				dstPort_match = dstPort_match + 1;
 			}
 			
 			if ( (PriorityInventory[i] == Priority)) 
 			{
-				match_fields = match_fields + 1;
+				priority_match = priority_match + 1;
 			}
 			
 			if ( (Action.equals("ALLOW")) || (Action.equals("allow")) || (Action.equals("Allow")) ) {
 				if ( (ActionInventory[i].equals("Allow")) || (ActionInventory[i].equals("ALLOW")) || (ActionInventory[i].equals("allow")) ) {
-					match_fields = match_fields + 1;
+					Action_match = Action_match + 1;
 				}
 				else {
 					//do nothing
@@ -781,28 +835,39 @@ public class AntivirusImpl implements AntivirusService {
 			
 			else if ( (Action.equals("DENY")) || (Action.equals("deny")) || (Action.equals("Deny")) ) {
 				if ( (ActionInventory[i].equals("Deny")) || (ActionInventory[i].equals("DENY")) || (ActionInventory[i].equals("deny"))) {
-			 		match_fields = match_fields + 1;
+					Action_match = Action_match + 1;
 				}
 				else {
 					//do nothing
 				}
 			}
 						
-			if (match_fields == 6) {
+			duplicate_rule_found = srcIP_match + dstIP_match + srcPort_match + dstPort_match + priority_match + Action_match;
+			conflicting_rule_found = srcIP_match + dstIP_match + srcPort_match + dstPort_match + priority_match;
+			
+			if (duplicate_rule_found == 6) {
 				duplicate_rule = true;
-				matched_index = i;
+				conflicting_rule = false;
+				duplicate_index = i;
 				break;				
 			}
 
+			else if (conflicting_rule_found == 5){
+				duplicate_rule = false;
+				conflicting_rule = true;
+				conflicting_index = i;
+				break;
+			}
 			else {
+				conflicting_rule = false;
 				duplicate_rule = false;
 			}
-		}
-		
-		duplicate_rule_parameters [0] = Boolean.toString(duplicate_rule);
-		duplicate_rule_parameters [1] = String.valueOf(matched_index);					
-		
-		return duplicate_rule_parameters;		
+		}		
+		parameters [0] = Boolean.toString(duplicate_rule);
+		parameters [1] = Integer.toString(duplicate_index);					
+		parameters [2] = Boolean.toString(conflicting_rule);
+		parameters [3] = Integer.toString(conflicting_index);
+		return parameters;		
 	}
 		
 	private InstanceIdentifier<ConfigurationRulesRegistryEntry> toInstanceIdentifier(String RuleID) {
