@@ -61,6 +61,9 @@ public class AntivirusImpl implements AntivirusService {
 	int TierTwoApplications = 100;
 	int TierThreeApplications = 100;
 		
+	/* (5) Mode of Operation */
+	int Mode = 2;
+	
 	/*-------------------- Temporary Variables --------------------*/
 	int [] App_Inventory = new int [Number_of_Applications];
 
@@ -92,12 +95,13 @@ public class AntivirusImpl implements AntivirusService {
 	String [] ActionInventory = new String [C];
 			
 	int Universal_Counter = 0; 
+	int dynamic_capacity = C;
 	
 	public AntivirusImpl (DataBroker db) {
 		this.db = db;
 		initializeDataTree(db);
 		App_Inventory = initialize_App_Inventory();
-		App_Precedence = Set_App_Precedence(1);
+		App_Precedence = Set_App_Precedence(Mode);
 		
 		SourcePortInventory = initialize_String_Array (SourcePortInventory);
 		DestinationPortInventory = initialize_String_Array (DestinationPortInventory);
@@ -107,7 +111,7 @@ public class AntivirusImpl implements AntivirusService {
 		ActionInventory = initialize_String_Array (ActionInventory);
 		
 		Password_Dictionary = initialize_Password_Dictionary ();
-		Threshold_Inventory = Set_Threshold_Inventory(1);
+		Threshold_Inventory = Set_Threshold_Inventory(Mode);
 	}	
 
 	private void initializeDataTree(DataBroker db) {
@@ -165,6 +169,9 @@ public class AntivirusImpl implements AntivirusService {
 		else if (Mode == 1) {
 			Threshold_Inventory = Role_Based_Resource_Allocation ();
 		}
+		else if (Mode == 2) {
+			Threshold_Inventory = Resource_Allocation_As_An_Optimization_Problem (dynamic_capacity);
+		}
 		else {
 			// do nothing
 		}
@@ -200,8 +207,10 @@ public class AntivirusImpl implements AntivirusService {
 				}
 			}
 		}
-		else if (Mode == 2) {
-			// Coding remaining
+		else if (Mode == 2) { 
+			for (int i = 0; i < App_Precedence.length; i++) {
+				App_Precedence [i] = 0;
+			}
 		}
 		return App_Precedence;
 	}
@@ -253,7 +262,15 @@ public class AntivirusImpl implements AntivirusService {
 		}
 		return Threshold_Inventory;
 	}
-
+	
+	public int[] Resource_Allocation_As_An_Optimization_Problem (int threshold) {
+		
+		for (int i = 0; i < Threshold_Inventory.length; i++) {
+			Threshold_Inventory [i] = threshold;
+		}
+		return Threshold_Inventory;
+	}
+	
 	public boolean check_format_AppID (String App_ID) {
 		boolean correct_format = false;
 		
@@ -636,7 +653,16 @@ public class AntivirusImpl implements AntivirusService {
 		App_Inventory[Integer.parseInt(input.getAppID())] = App_Inventory[Integer.parseInt(input.getAppID())] + 1;
 		Greeting_Message = "Rule ID: " + input.getRuleID() + " for App ID: " +input.getAppID() + " stored.";										
 
-		Universal_Counter = Universal_Counter + 1;							
+		Universal_Counter = Universal_Counter + 1;
+		dynamic_capacity = dynamic_capacity - 1; // Required for third mode of operation, i.e., Resource Allocation as an Optimization Problem.
+		
+		if (Mode == 2) {
+			Threshold_Inventory = Set_Threshold_Inventory (Mode);
+		}
+		else {
+			Threshold_Inventory = Threshold_Inventory;
+		}
+		
 		return Greeting_Message;		
 	}
 	
@@ -657,6 +683,15 @@ public class AntivirusImpl implements AntivirusService {
 		ActionInventory = DeleteEntryFromStringArray (indexToBeDeleted, ActionInventory);
 
 		Universal_Counter = Universal_Counter - 1;
+		dynamic_capacity = dynamic_capacity + 1; // Required for third mode of operation, i.e., Resource Allocation as an Optimization Problem.
+
+		if (Mode == 2) {
+			Threshold_Inventory = Set_Threshold_Inventory (Mode);
+		}
+		else {
+			Threshold_Inventory = Threshold_Inventory;
+		}
+		
 		return Greeting_Message;		
 	}
 	
