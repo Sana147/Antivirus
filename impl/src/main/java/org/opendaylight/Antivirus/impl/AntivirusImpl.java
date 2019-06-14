@@ -32,6 +32,7 @@ import org.opendaylight.yangtools.yang.common.RpcResultBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+
 import com.google.common.base.Optional;
 import com.google.common.util.concurrent.CheckedFuture;
 import com.google.common.util.concurrent.Futures;
@@ -39,6 +40,7 @@ import com.google.common.util.concurrent.Futures;
 public class AntivirusImpl implements AntivirusService {
 	
 	//TODO -- Handle exceptions everywhere in the code; special characters are problematic. (Fixed)
+	//TODO -- Rule ID: 1:5q is invalid and gives 500 Server Error. Fix that.
 	//TODO -- Handle Rule Duplication for all three modes. (Handled for Fair Resource Allocation and Role based Resource Allocation). 
 	//TODO -- Handle Rule Conflict for all three modes. (Handled for Fair Resource Allocation and Role based Resource Allocation).
 	
@@ -47,10 +49,10 @@ public class AntivirusImpl implements AntivirusService {
 
 	/*---------- The following parameters are configured by Network Practitioner ----------*/
 	/* (1) Total number of Applications that can access configuration datastore. There are typically 400 applications.*/
-	int Number_of_Applications = 400;
+	int Number_of_Applications = 2;//400;
 
 	/* (2) The total capacity in configuration datastore.*/
-	int C = 4000;
+	int C = 10;//4000;
 	
 	/* (3) Password Dictionary. */
 	// Use something like OTP or RSA...depending on which one is more efficient.
@@ -223,6 +225,7 @@ public class AntivirusImpl implements AntivirusService {
 		{
 			/*---------- Fairness (conceived in terms of the ideal of equal) Resource Allocation ----------*/
 			threshold = C/Number_of_Applications;
+			LOG.info("Breakpoint: The threshold for AppID: i" + i + "is " + Threshold_Inventory[i]);
 			Threshold_Inventory [i] = threshold;
 		}
 		return Threshold_Inventory;
@@ -267,7 +270,7 @@ public class AntivirusImpl implements AntivirusService {
 		
 		for (int i = 0; i < Threshold_Inventory.length; i++) {
 			Threshold_Inventory [i] = threshold;
-		}
+		}		
 		return Threshold_Inventory;
 	}
 	
@@ -278,18 +281,15 @@ public class AntivirusImpl implements AntivirusService {
 
 			if ((Integer.parseInt(App_ID) >= 0) && (Integer.parseInt(App_ID) <= 399))
 			{
-				LOG.info("Format is correct");
 				correct_format = true;
 			}
 			else 
 			{
 				correct_format = false;
-				LOG.info("Format is incorrect");
 			}
 		}
 		catch(NumberFormatException e) {
 			correct_format = false;
-			LOG.info("Format is an exception.");
 		}
 		return correct_format;
 	}
@@ -309,7 +309,7 @@ public class AntivirusImpl implements AntivirusService {
 		return correct_format;
 	}
 	
-	public boolean check_format_RuleID (String RuleID, int AppID) {
+	public boolean check_format_RuleID (ApplicationHelloInput input) {
 		
 		boolean correct_format = false;
 	    boolean format_correct = true;
@@ -318,6 +318,10 @@ public class AntivirusImpl implements AntivirusService {
 		int AppID_part = 0;
 		int RuleNumber_part = 0;
 		int j = 0;
+		String [] parameters = {"false","-2","false","-2"};
+		String RuleID = input.getRuleID();
+		int AppID = Integer.parseInt(input.getAppID());
+		int Operation = input.getOperation();
 		
 		for (int i = 0; i < RuleID.length(); i++) 
 		{
@@ -344,13 +348,45 @@ public class AntivirusImpl implements AntivirusService {
 				str = sb.toString();
 				RuleNumber_part = Integer.parseInt(str);
 				
-				if ((RuleNumber_part > 0) && (RuleNumber_part <= Threshold_Inventory[AppID_part])) 
-				{
-					format_correct = true && format_correct;
+				if (Mode == 2) {
+					parameters = FindDuplicateConflictingRule (input);
+					
+					if ((RuleNumber_part > 0) && (Threshold_Inventory[AppID_part] == 0) && (Operation == 1)) {
+						
+						if (parameters[0].equals("true")) { // rule exists and can be deleted
+							format_correct = true && format_correct;
+						}
+						else {
+							format_correct = false; // Greeting Message should be correct
+						}
+					}
+					else if ((RuleNumber_part > 0) && (Threshold_Inventory[AppID_part] == 0) && (Operation == 0)) {
+						
+						if (parameters[0].equals("true")) { // rule exists and can be deleted
+							format_correct = true && format_correct;
+						}
+						else {
+							format_correct = false; // Greeting Message should be correct
+						}
+					}
+					else if ((RuleNumber_part > 0) && (Threshold_Inventory[AppID_part] != 0)) 
+					{
+						format_correct = true && format_correct;
+					}
+					
+					else {
+						format_correct = false;
+					}
 				}
-				else
-				{
-					format_correct = false;
+				else {
+					if ((RuleNumber_part > 0) && (RuleNumber_part <= Threshold_Inventory[AppID_part])) 
+					{
+						format_correct = true && format_correct;
+					}
+					else
+					{
+						format_correct = false;
+					}					
 				}
 			}
 	        else 
@@ -466,12 +502,10 @@ public class AntivirusImpl implements AntivirusService {
 	  if ((number_of_dots == 4) && (backslash == 1) && (format_correct)) 
 	  {
 		  correct_format = true;
-		  LOG.info ("The IP Format is correct.");
 	  }
 	  else
 	  {
 		  correct_format = false;
-		  LOG.info ("The IP Format is not correct.");
 	  }
 	  return correct_format;
 	}
@@ -492,7 +526,7 @@ public class AntivirusImpl implements AntivirusService {
 	public String checkInputFormat (ApplicationHelloInput input) {
 		String Greeting_Message = null;
 		boolean check_Operation_format = check_format_Operation (input.getOperation());
-		boolean check_Rule_ID_format = check_format_RuleID (input.getRuleID(), Integer.parseInt(input.getAppID()));
+		boolean check_Rule_ID_format = check_format_RuleID (input); 
 		boolean check_format_SourceIP = check_format_IP_address (input.getSourceIP());
 		boolean check_format_DestinationIP = check_format_IP_address (input.getDestinationIP());
 		boolean check_source_port_format = check_format_ports (input.getSourcePort());
@@ -506,47 +540,39 @@ public class AntivirusImpl implements AntivirusService {
 		
 		if (check_format)
 		{
-			LOG.info("Breakpoint: Going into Decision Engine");
+			LOG.info("Breakpoint: In decision Engine.");
 			Greeting_Message = Decision_Engine (input);
-			LOG.info("Format is correct.");
 		}
 		else
 		{
 			if (check_Operation_format == false) 
 			{
 				Greeting_Message = "Operation can be 0 for addition and 1 for deletion. Try Again!.";
-				LOG.info("Format for Operation is not correct.");
 			}
 			else if (check_Rule_ID_format == false) 
 			{
 				Greeting_Message = "Check Rule ID format, X:Y. (X is the AppID and Y is the rule number). Make sure rule number is within limits (Limit = " +
 						Threshold_Inventory[current_AppID] +").";
-				LOG.info("Format for Rule ID is not correct.");
 			}
 			else if (check_format_SourceIP == false)
 			{
 				Greeting_Message = "The format for Source IP is X.X.X.X/X.; Try Again!.";
-				LOG.info ("Format for Source IP Address is not correct.");
 			}
 			else if (check_format_DestinationIP == false)
 			{
 				Greeting_Message = "The format for Destination IP is X.X.X.X/X.; Try Again.";
-				LOG.info ("Format for Source IP Address is not correct.");
 			}
 			else if (check_source_port_format == false)
 			{
 				Greeting_Message = "The range for Source Port lies between 1025 and 65535. Try Again.";
-				LOG.info ("Format for Source Port is not correct");
 			}
 			else if (check_destination_port_format == false)
 			{
 				Greeting_Message = "The range for Destination Port lies between 1025 and 65535. Try Again.";
-				LOG.info ("Format for Destination Port is not correct");
 			}
 			else // check_format_action = false
 			{
 				Greeting_Message = "The specified action can only be ALLOW or DENY. Try Again.";
-				LOG.info ("Format for Action is not correct");				
 			}
 		}
 		return Greeting_Message;
@@ -658,20 +684,19 @@ public class AntivirusImpl implements AntivirusService {
 		
 		if (Mode == 2) {
 			Threshold_Inventory = Set_Threshold_Inventory (Mode);
+			LOG.info("Breakpoint4: The value in Threshold_Inventory has been updated.");
+			LOG.info("Breakpoint5: The value in Threshold_Inventory is : " + Threshold_Inventory[Integer.parseInt(input.getAppID())]);
 		}
 		else {
 			Threshold_Inventory = Threshold_Inventory;
 		}
-		
 		return Greeting_Message;		
 	}
 	
 	public String DeleteFromRuleCatalog (String RuleID, String AppID, int indexToBeDeleted) {
 		String Greeting_Message = null;
-		LOG.info("Breakpoint2: The RuleID is: " + RuleID);
 		deletefromRuleRegistry (RuleID);
 		App_Inventory[Integer.parseInt(AppID)] = App_Inventory[Integer.parseInt(AppID)] - 1;
-		LOG.info("Breakpoint: In DeleteFromRuleCatalog.");
 		
 		Greeting_Message = "Rule ID: " + RuleID + "for App ID: " + AppID + " deleted.";
 		RuleIDInventory = DeleteEntryFromStringArray (indexToBeDeleted, RuleIDInventory);
@@ -687,6 +712,7 @@ public class AntivirusImpl implements AntivirusService {
 
 		if (Mode == 2) {
 			Threshold_Inventory = Set_Threshold_Inventory (Mode);
+			LOG.info("Breakpoint3: The Threshold_Inventory has been updated.");
 		}
 		else {
 			Threshold_Inventory = Threshold_Inventory;
@@ -703,11 +729,14 @@ public class AntivirusImpl implements AntivirusService {
 		String Existing_RuleID = null;
 		int AppID_part = -2;
 	    int High_Priority_App;
+		String result;
+		result = readFromruleRegistry (input.getRuleID());
 		
 		if (Universal_Counter == 0) {
 			if (Operation == 0) {
 				LOG.info("Breakpoint: In Decision Engine.");
 				Greeting_Message = UpdateRuleCatalog (input);
+				LOG.info("Breakpoint: Successfully updated rule catalog.");
 			}
 			else if (Operation == 1) {
     			Greeting_Message = "Rule ID: " + input.getRuleID() + " for App ID: " +input.getAppID() + " does not exist.";									
@@ -716,6 +745,12 @@ public class AntivirusImpl implements AntivirusService {
 				// do nothing
 			}
 		}
+		
+		else if ((result == "Rule Found") && (Operation == 0)) // do not allow Rules with same IDs to exist in configuration datastore.
+		{
+				Greeting_Message = ("Rule with Rule ID : " + input.getRuleID() + "already exists.");
+		}
+			
 		else {
 			parameters = FindDuplicateConflictingRule (input);
 			
@@ -800,9 +835,10 @@ public class AntivirusImpl implements AntivirusService {
 				}
 			}
 		}
+		LOG.info("Breakpoint1111: Returning from FindDuplicateConflictingRule.");
 		return Greeting_Message;
 	}
-		
+			
 	public String[] FindDuplicateConflictingRule (ApplicationHelloInput input) {
 		String SourceIP = input.getSourceIP();
 		String DestinationIP = input.getDestinationIP();
@@ -826,7 +862,7 @@ public class AntivirusImpl implements AntivirusService {
 		int duplicate_rule_found;
 		int conflicting_rule_found;
 	    		
-		for (i = 0; i <= Universal_Counter; i++) {
+		for (i = 0; i < Universal_Counter; i++) {
 			srcIP_match = 0;
 			dstIP_match = 0;
 			srcPort_match = 0;
@@ -867,7 +903,7 @@ public class AntivirusImpl implements AntivirusService {
 					//do nothing
 				}
 			}
-			
+
 			else if ( (Action.equals("DENY")) || (Action.equals("deny")) || (Action.equals("Deny")) ) {
 				if ( (ActionInventory[i].equals("Deny")) || (ActionInventory[i].equals("DENY")) || (ActionInventory[i].equals("deny"))) {
 					Action_match = Action_match + 1;
@@ -876,8 +912,8 @@ public class AntivirusImpl implements AntivirusService {
 					//do nothing
 				}
 			}
-						
-			duplicate_rule_found = srcIP_match + dstIP_match + srcPort_match + dstPort_match + priority_match + Action_match;
+
+			duplicate_rule_found = srcIP_match + dstIP_match + srcPort_match + dstPort_match + priority_match + Action_match;			
 			conflicting_rule_found = srcIP_match + dstIP_match + srcPort_match + dstPort_match + priority_match;
 			
 			if (duplicate_rule_found == 6) {
@@ -898,8 +934,9 @@ public class AntivirusImpl implements AntivirusService {
 				duplicate_rule = false;
 			}
 		}		
+		
 		parameters [0] = Boolean.toString(duplicate_rule);
-		parameters [1] = Integer.toString(duplicate_index);					
+		parameters [1] = Integer.toString(duplicate_index);			
 		parameters [2] = Boolean.toString(conflicting_rule);
 		parameters [3] = Integer.toString(conflicting_index);
 		return parameters;		
@@ -937,7 +974,25 @@ public class AntivirusImpl implements AntivirusService {
 		CheckedFuture<Void, org.opendaylight.controller.md.sal.common.api.data.TransactionCommitFailedException> future = transaction.submit();
 		Futures.addCallback(future, new LoggingFuturesCallBack<Void>("Failed to delete a rule", LOG));
 		}
-		
+	
+	private String readFromruleRegistry (String RuleID) {
+	    String result = null;
+	    ReadOnlyTransaction transaction = db.newReadOnlyTransaction();
+	    InstanceIdentifier<ConfigurationRulesRegistryEntry> iid = toInstanceIdentifier(RuleID);
+	    CheckedFuture<Optional<ConfigurationRulesRegistryEntry>, ReadFailedException> future =
+	            transaction.read(LogicalDatastoreType.CONFIGURATION, iid);
+	    Optional<ConfigurationRulesRegistryEntry> optional = Optional.absent();
+	    try {
+	        optional = future.checkedGet();
+	    } catch (ReadFailedException e) {
+	        LOG.warn("Reading greeting failed:",e);
+	    }
+	    if(optional.isPresent()) {
+	    	result = "Rule Found";
+	    }
+	    return result;
+		}
+
 	@Override
 	public Future<RpcResult<ApplicationHelloOutput>> applicationHello (ApplicationHelloInput input) {
 
@@ -948,6 +1003,7 @@ public class AntivirusImpl implements AntivirusService {
 		boolean PasswordCorrect;
 		
 		check_App_ID_format = check_format_AppID(input.getAppID());
+		
 		Counter = 0;
 		
 		if (check_App_ID_format == true) {
@@ -974,5 +1030,4 @@ public class AntivirusImpl implements AntivirusService {
 					  .build();
 		return RpcResultBuilder.success(output).buildFuture();
 		}
-
 }
