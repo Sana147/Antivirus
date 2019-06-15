@@ -32,7 +32,6 @@ import org.opendaylight.yangtools.yang.common.RpcResultBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 import com.google.common.base.Optional;
 import com.google.common.util.concurrent.CheckedFuture;
 import com.google.common.util.concurrent.Futures;
@@ -49,10 +48,10 @@ public class AntivirusImpl implements AntivirusService {
 
 	/*---------- The following parameters are configured by Network Practitioner ----------*/
 	/* (1) Total number of Applications that can access configuration datastore. There are typically 400 applications.*/
-	int Number_of_Applications = 2;//400;
+	int Number_of_Applications = 3;//400;
 
 	/* (2) The total capacity in configuration datastore.*/
-	int C = 10;//4000;
+	int C = 9;//4000;
 	
 	/* (3) Password Dictionary. */
 	// Use something like OTP or RSA...depending on which one is more efficient.
@@ -64,7 +63,7 @@ public class AntivirusImpl implements AntivirusService {
 	int TierThreeApplications = 100;
 		
 	/* (5) Mode of Operation */
-	int Mode = 2;
+	int Mode = 0;
 	
 	/*-------------------- Temporary Variables --------------------*/
 	int [] App_Inventory = new int [Number_of_Applications];
@@ -211,7 +210,8 @@ public class AntivirusImpl implements AntivirusService {
 		}
 		else if (Mode == 2) { 
 			for (int i = 0; i < App_Precedence.length; i++) {
-				App_Precedence [i] = 0;
+				App_Precedence [i] = i;
+				LOG.info("The App_Precedence for App ID " + i + " is " + i + ".");
 			}
 		}
 		return App_Precedence;
@@ -274,11 +274,56 @@ public class AntivirusImpl implements AntivirusService {
 		return Threshold_Inventory;
 	}
 	
+	public boolean HandleResourceAllocationAsAnOptimizationProblem (ApplicationHelloInput input, int RuleNumber_part) {
+		boolean format_correct = true;
+		String [] parameters = {"false","-2","false","-2"};
+		int LowPriorityApp = -2;
+		int RuleIndex = -2;
+		String Greeting_Message = null;		
+		int Operation = input.getOperation();
+		
+		parameters = FindDuplicateConflictingRule (input);
+		
+		if ((RuleNumber_part > 0) && (dynamic_capacity == 0) && (Operation == 1)) {
+			
+			if (parameters[0].equals("true")) { // rule exists and can be deleted
+				format_correct = true && format_correct;
+			}
+			else {
+				format_correct = false; // Greeting Message should be correct
+			}
+		}
+		else if ((RuleNumber_part > 0) && (dynamic_capacity == 0) && (Operation == 0)) {
+			if (parameters[0].equals("true")) { // handles existing matching rule case.
+				format_correct = true && format_correct;
+			}
+			else {
+				// Make capacity
+				LowPriorityApp = FindLowPriorityApp(App_Precedence[Integer.parseInt(input.getAppID())],Integer.parseInt(input.getAppID()));
+				RuleIndex = FindLowestPriorityRuleForAnApplication (LowPriorityApp);
+				if (RuleIndex != -2) { //a low priority App and a low priority rule found
+					Greeting_Message = DeleteFromRuleCatalog (RuleIDInventory[RuleIndex], Integer.toString(LowPriorityApp), RuleIndex);							
+					format_correct = true;
+				}
+				else {
+					format_correct = false; 								
+				}
+			}
+		}
+		else if ((RuleNumber_part > 0) && (dynamic_capacity != 0)) 
+		{
+			format_correct = true && format_correct;
+		}
+		
+		else {
+			format_correct = false;
+		}
+		return format_correct;
+	}
+	
 	public boolean check_format_AppID (String App_ID) {
 		boolean correct_format = false;
-		
 		try {
-
 			if ((Integer.parseInt(App_ID) >= 0) && (Integer.parseInt(App_ID) <= 399))
 			{
 				correct_format = true;
@@ -318,10 +363,8 @@ public class AntivirusImpl implements AntivirusService {
 		int AppID_part = 0;
 		int RuleNumber_part = 0;
 		int j = 0;
-		String [] parameters = {"false","-2","false","-2"};
 		String RuleID = input.getRuleID();
 		int AppID = Integer.parseInt(input.getAppID());
-		int Operation = input.getOperation();
 		
 		for (int i = 0; i < RuleID.length(); i++) 
 		{
@@ -349,34 +392,7 @@ public class AntivirusImpl implements AntivirusService {
 				RuleNumber_part = Integer.parseInt(str);
 				
 				if (Mode == 2) {
-					parameters = FindDuplicateConflictingRule (input);
-					
-					if ((RuleNumber_part > 0) && (Threshold_Inventory[AppID_part] == 0) && (Operation == 1)) {
-						
-						if (parameters[0].equals("true")) { // rule exists and can be deleted
-							format_correct = true && format_correct;
-						}
-						else {
-							format_correct = false; // Greeting Message should be correct
-						}
-					}
-					else if ((RuleNumber_part > 0) && (Threshold_Inventory[AppID_part] == 0) && (Operation == 0)) {
-						
-						if (parameters[0].equals("true")) { // rule exists and can be deleted
-							format_correct = true && format_correct;
-						}
-						else {
-							format_correct = false; // Greeting Message should be correct
-						}
-					}
-					else if ((RuleNumber_part > 0) && (Threshold_Inventory[AppID_part] != 0)) 
-					{
-						format_correct = true && format_correct;
-					}
-					
-					else {
-						format_correct = false;
-					}
+					format_correct = HandleResourceAllocationAsAnOptimizationProblem (input, RuleNumber_part);
 				}
 				else {
 					if ((RuleNumber_part > 0) && (RuleNumber_part <= Threshold_Inventory[AppID_part])) 
@@ -405,6 +421,84 @@ public class AntivirusImpl implements AntivirusService {
 		return correct_format;
 	}
 		
+	public int FindLowestPriorityRuleForAnApplication (int AppIDToBeMatched) {
+		int Rule_Index = -2;
+		int currentAppID;
+		int LowestPriority = 65535;
+		
+		for (int i = 0; i < Universal_Counter; i++) {
+			currentAppID = FindAppIDFromRuleID(RuleIDInventory[i]);
+			if (currentAppID == AppIDToBeMatched) {
+				if (PriorityInventory[i] <= LowestPriority) {
+					LowestPriority = PriorityInventory[i];
+					Rule_Index = i;
+				}
+				else {
+					continue;
+				}
+			}
+			else {
+				continue;
+			}
+		}
+		return Rule_Index;
+	}
+	
+	public int FindLowPriorityApp (int currentAppPriority, int AppID) {
+
+		int LowPriorityApp = -2;
+		
+		for (int i = 0; i < App_Precedence.length; i++) {				
+			if (i != AppID) {
+				
+				if (currentAppPriority == 2) {
+					//identify Apps; first with precedence 0 and then with precedence 1. 
+					if (App_Precedence[i] == 0) {
+						
+						if (App_Inventory[i] != 0) {
+							LowPriorityApp = i;
+							break;
+						}
+						else {
+							// do nothing
+						}
+					}
+					else if (App_Precedence[i] == 1) {
+						
+						if (App_Inventory[i] != 0) {
+							LowPriorityApp = i;
+							break;
+						}
+						else {
+							// do nothing
+						}
+					}
+					else {
+						// do nothing 
+					}
+				}
+				else if (currentAppPriority == 1) {
+					if (App_Precedence[i] == 0) {
+						if (App_Inventory[i] != 0) {
+							LowPriorityApp = i;
+							break;
+						}
+						else {
+							// do nothing
+						}
+					}
+				}
+				else { // currentAppPriority == 0, so do nothing
+					// do nothing
+				}
+			}
+			else { // skip if i == AppID
+				continue;
+				}
+			}
+		return LowPriorityApp;
+		}
+	
 	public boolean check_format_ports (String port) {
 		
 		boolean correct_format = false;
@@ -419,7 +513,6 @@ public class AntivirusImpl implements AntivirusService {
 		{
 			correct_format = true;
 		}
-		
 		else if (((Integer.parseInt(port) > 1024) && (Integer.parseInt(port) < 65536)))
 		{
 			correct_format = true;
@@ -540,8 +633,7 @@ public class AntivirusImpl implements AntivirusService {
 		
 		if (check_format)
 		{
-			LOG.info("Breakpoint: In decision Engine.");
-			Greeting_Message = Decision_Engine (input);
+				Greeting_Message = Decision_Engine (input);				
 		}
 		else
 		{
@@ -604,7 +696,7 @@ public class AntivirusImpl implements AntivirusService {
 	          return Array; 
 	          } 
 	      else {
-	    	  	String[] NewArray = new String[Array.length - 1]; 
+	    	  	String[] NewArray = new String[Array.length]; 
 	            for (int i = 0, k = 0; i < Array.length; i++) { 
 	              if (i == index) { 
 	                  continue; 
@@ -622,7 +714,7 @@ public class AntivirusImpl implements AntivirusService {
 	          return Array; 
 	          } 
 	      else {
-	    	  	int[] NewArray = new int[Array.length - 1]; 
+	    	  	int[] NewArray = new int[Array.length]; 
 	            for (int i = 0, k = 0; i < Array.length; i++) { 
 	              if (i == index) { 
 	                  continue; 
@@ -657,7 +749,7 @@ public class AntivirusImpl implements AntivirusService {
 	public String UpdateRuleCatalog (ApplicationHelloInput input) {
 
 		String Greeting_Message = null;
-		
+				
 		RuleIDInventory [Universal_Counter] = input.getRuleID();
 		SourceIPInventory [Universal_Counter] = input.getSourceIP();
 		DestinationIPInventory [Universal_Counter] = input.getDestinationIP();
@@ -684,8 +776,6 @@ public class AntivirusImpl implements AntivirusService {
 		
 		if (Mode == 2) {
 			Threshold_Inventory = Set_Threshold_Inventory (Mode);
-			LOG.info("Breakpoint4: The value in Threshold_Inventory has been updated.");
-			LOG.info("Breakpoint5: The value in Threshold_Inventory is : " + Threshold_Inventory[Integer.parseInt(input.getAppID())]);
 		}
 		else {
 			Threshold_Inventory = Threshold_Inventory;
@@ -712,7 +802,6 @@ public class AntivirusImpl implements AntivirusService {
 
 		if (Mode == 2) {
 			Threshold_Inventory = Set_Threshold_Inventory (Mode);
-			LOG.info("Breakpoint3: The Threshold_Inventory has been updated.");
 		}
 		else {
 			Threshold_Inventory = Threshold_Inventory;
@@ -734,9 +823,7 @@ public class AntivirusImpl implements AntivirusService {
 		
 		if (Universal_Counter == 0) {
 			if (Operation == 0) {
-				LOG.info("Breakpoint: In Decision Engine.");
 				Greeting_Message = UpdateRuleCatalog (input);
-				LOG.info("Breakpoint: Successfully updated rule catalog.");
 			}
 			else if (Operation == 1) {
     			Greeting_Message = "Rule ID: " + input.getRuleID() + " for App ID: " +input.getAppID() + " does not exist.";									
@@ -804,7 +891,6 @@ public class AntivirusImpl implements AntivirusService {
 		    			
 						writeToRuleRegistry(input);
 		    			App_Inventory[Integer.parseInt(input.getAppID())] = App_Inventory[Integer.parseInt(input.getAppID())] + 1;
-
 						RuleIDInventory[Integer.parseInt(parameters[3])] = input.getRuleID(); //overwrite existing RuleID
 						ActionInventory[Integer.parseInt(parameters[3])] = input.getAction();
 						Greeting_Message = "Rule conflict Found. Replaced with High Priority App having AppID : " + input.getAppID();						
@@ -823,7 +909,8 @@ public class AntivirusImpl implements AntivirusService {
 		    		}
 				}				
 			}
-			else {
+			else { // The new rule is neither a conflicting rule nor a duplicate rule
+				LOG.info("Breakpoint119: The rule is neither a duplicate rule nor a conflicting rule.");
 				if (Operation == 0) {
 					Greeting_Message = UpdateRuleCatalog (input);
 				}
@@ -835,7 +922,6 @@ public class AntivirusImpl implements AntivirusService {
 				}
 			}
 		}
-		LOG.info("Breakpoint1111: Returning from FindDuplicateConflictingRule.");
 		return Greeting_Message;
 	}
 			
@@ -934,7 +1020,6 @@ public class AntivirusImpl implements AntivirusService {
 				duplicate_rule = false;
 			}
 		}		
-		
 		parameters [0] = Boolean.toString(duplicate_rule);
 		parameters [1] = Integer.toString(duplicate_index);			
 		parameters [2] = Boolean.toString(conflicting_rule);
@@ -1003,7 +1088,6 @@ public class AntivirusImpl implements AntivirusService {
 		boolean PasswordCorrect;
 		
 		check_App_ID_format = check_format_AppID(input.getAppID());
-		
 		Counter = 0;
 		
 		if (check_App_ID_format == true) {
